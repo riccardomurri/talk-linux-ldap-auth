@@ -1,0 +1,314 @@
+\documentclass[english,serif,mathserif,usenames,dvipsnames]{beamer}
+\usetheme[informal]{gc3}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{babel}
+
+\usepackage{gc3}
+
+\begin{document}
+
+\title[LDAP auth]{Linux LDAP authentication}
+\author{Riccardo Murri \texttt{<riccardo.murri@uzh.ch>}}
+\date{\today}
+
+%% Makes the title slide
+\maketitle
+
+\section{Intro}
+\begin{frame}{What is LDAP?}
+
+  \href{http://en.wikipedia.org/wiki/Ldap}{LDAP} is a distributed
+  database, optimized for reading and searching.
+
+  \+ These days, LDAP is mostly used for distributing
+  \emph{authentication} information, i.e., as a replacement for
+  \texttt{/etc/passwd}, NIS/YP, etc.
+\end{frame}
+
+
+\begin{frame}[fragile]
+  \frametitle{Example LDIF entry}
+\begin{semiverbatim}\scriptsize
+\textbf{# ldapsearch -x -H ldaps://idldapmaster01.uzh.ch {\textbackslash}
+  -W -D cn=idSysRoHPC2HPC,ou=Admin,ou=id,dc=uzh,dc=ch {\textbackslash}
+  -b "ou=People,ou=HPC,ou=id,dc=uzh,dc=ch" "(uid=rmurri)"}
+dn: uid=rmurri,ou=People,ou=HPC,ou=id,dc=uzh,dc=ch
+objectClass: idAccount
+objectClass: account
+objectClass: posixAccount
+objectClass: shadowAccount
+objectClass: top
+userPasswordHash: \{crypt\}DjY4deC6nz9F
+uid: rmurri
+cn: rmurri
+homeDirectory: /home/user/rmurri
+uidNumber: 6909
+gidNumber: 1001
+uzhuuid: u1042765
+userPassword:: e2NyeXB0fUs0bG1vNnNHMnM5Q1U=
+loginShell: /bin/bash
+gecos: Riccardo Murri
+mail: riccardo.murri@uzh.ch
+\end{semiverbatim}
+  \begin{seealso}
+    \href{https://www.ietf.org/rfc/rfc2307.txt}{RFC 2307} for details.
+  \end{seealso}
+\end{frame}
+
+
+\begin{frame}{Three options for LDAP auth in Linux}
+  \begin{enumerate}
+  \item
+    \href{http://www.padl.com/OSS/pam_ldap.html}{libnss-ldap/pam-ldap}:
+    Library-only implementation by PADL software
+  \item \href{http://arthurdejong.org/nss-pam-ldapd/}{nss-pam-ldapd}:
+    More recent implementation by A. De Jong,
+    offloading LDAP connection to a shared service.
+  \item
+    \href{https://access.redhat.com/documentation/en-US/Red_Hat_Enterprise_Linux/6/html/Deployment_Guide/SSSD-Introduction.html}{SSSD}:
+    Local authentication service with pluggable backends and caching
+    features.
+  \end{enumerate}
+\end{frame}
+
+
+\section{libnss-ldap / libpam-ldap}
+\begin{frame}{libnss-ldap / libpam-ldap}
+  \textbf{Pros:}
+  \begin{itemize}
+  \item very well known
+  \item available for every distro
+  \end{itemize}
+
+  \+
+  \textbf{Cons:}
+  \begin{itemize}
+  \item LDAP client library (and its dependencies) is loaded into \emph{every} running process
+  \item potentially one LDAP connection per process and one LDAP search per \texttt{get*ent()} call
+  \item requires \texttt{nscd} otherwise you're spamming the server
+  \item login and other lookup operations can hang if network is not available
+  \end{itemize}
+
+  \begin{seealso}
+    \url{https://wiki.debian.org/LDAP/NSS}
+  \end{seealso}
+\end{frame}
+
+\begin{frame}[fragile]
+  \frametitle{Example libnss-ldap configuration}
+\begin{semiverbatim}\scriptsize
+\textbf{# cat /etc/ldap.conf}
+uri ldap://192.168.160.35 ldap://192.168.160.36
+ldap_version 3
+rootbinddn cn=root,dc=gc3,dc=uzh,dc=ch
+pam_password md5
+base dc=gc3,dc=uzh,dc=ch
+nss_base_passwd        ou=People,dc=gc3,dc=uzh,dc=ch
+nss_base_shadow        ou=People,dc=gc3,dc=uzh,dc=ch
+nss_base_group         ou=Group,dc=gc3,dc=uzh,dc=ch
+nss_initgroups_ignoreusers root,daemon,bin,...,postfix
+\end{semiverbatim}
+\end{frame}
+
+
+\section{nss-pam-ldapd}
+\begin{frame}
+  \frametitle{nss-pam-ldapd}
+  Tries to address some shortcomings of \texttt{libnss-ldap}.
+  \begin{itemize}
+  \item offloads all LDAP connection and searching to a separate daemon called \href{http://arthurdejong.org/nss-pam-ldapd/nslcd.8}{\texttt{nslcd}}
+  \item NSS clients talk to \texttt{nslcd} over local UNIX domain sockets
+  \end{itemize}
+
+  \+
+  \textbf{Pros:}
+  \begin{itemize}
+  \item simple and lightweight NSS client code
+  \item \textbf{per host connection pooling}
+  \item in case of network failures, \texttt{nslcd} fails quickly
+  \item \textbf{flexible attribute mapping features}
+  \end{itemize}
+
+  \+
+  \textbf{Cons:}
+  \begin{itemize}
+  \item code changes quickly: some features you need may not be available
+    in the distro you're using
+  \item superceded by SSSD: will likely remain a niche system
+  \end{itemize}
+\end{frame}
+
+
+\begin{frame}[fragile]
+  \frametitle{Example pam-nss-ldap configuration}
+\begin{semiverbatim}\scriptsize
+\textbf{# cat /etc/nslcd.conf}
+uri ldap://192.168.160.35 ldap://192.168.160.36
+ldap_version 3
+uid nslcd
+gid nslcd
+base dc=gc3,dc=uzh,dc=ch
+binddn cn=root,dc=gc3,dc=uzh,dc=ch
+bindpw ********
+ssl on
+tls_reqcert demand
+tls_cacertfile /etc/ssl/certs/ca-certificates.crt
+nss_initgroups_ignoreusers root,daemon,bin,...,postfix
+\end{semiverbatim}
+\end{frame}
+
+
+\section{SSSD}
+\begin{frame}[fragile]
+  \frametitle{SSSD, I}
+  The \href{https://fedorahosted.org/sssd/}{\emph{System Security
+      Services Daemon}} is developed by Red Hat and available in
+  Fedora, RHEL6, but also Debian and Ubuntu.
+
+  \+
+  Same architecture/idea as\emph{nss-pam-ldapd}: separate client code
+  into a daemon, and let NSS/PAM talk to it via a local UNIX-domain
+  socket.
+
+  \+
+  Pluggable backends: SSSD starts one daemon per
+  \emph{authentication domain}, so there is actually a family of
+  processes:
+\begin{semiverbatim}\tiny
+# ps fauxwww | fgrep sss
+root     Ss   Oct29   2:19 /usr/sbin/sssd -f -D
+root     S    Oct29   8:21  \textbackslash\_ /usr/lib64/sssd/sssd_be -d 0 --debug-to-files --domain ldap1.ften.es.hpcn.uzh.ch
+root     S    Oct29   0:28  \textbackslash\_ /usr/lib64/sssd/sssd_nss -d 0 --debug-to-files
+root     S    Oct29   0:22  \textbackslash\_ /usr/lib64/sssd/sssd_pam -d 0 --debug-to-files
+\end{semiverbatim}
+\end{frame}
+
+
+\begin{frame}
+  \frametitle{SSSD, II}
+  \textbf{Pros:}
+  \begin{itemize}
+  \item simple and lightweight NSS client code
+  \item \textbf{per host connection pooling}
+  \item \textbf{Not just for LDAP:} can do Active Directory, and Kerberos too
+  \item \textbf{Can aggregate data from various sources}
+  \item Can also retrieve and cache SSH \emph{known host} entries
+  \end{itemize}
+
+  \textbf{Cons:}
+  \begin{itemize}
+  \item Configuration is more complex
+  \item Documentation is extensive and there currently is no concise overview
+  \item Actively developed, some features you need may not be
+    available in the distro you're using
+  \item Own caching daemon distinct from \texttt{nscd}
+  \end{itemize}
+\end{frame}
+
+
+\begin{frame}[fragile]
+  \frametitle{Example SSSD configuration, I}
+\begin{semiverbatim}\scriptsize
+[sssd]
+config_file_version = 2
+
+\emph{# what services should SSSD interface to}
+services = nss, pam
+
+\emph{# index of auth backends}
+domains = LDAP
+
+[nss]
+filter_users = root,ldap,\ldots,nscd
+
+[pam]
+reconnection_retries = 3
+debug_level = 8
+\end{semiverbatim}
+\end{frame}
+
+\begin{frame}[fragile]
+  \frametitle{Example SSSD configuration, II}
+\begin{semiverbatim}\scriptsize
+\emph{# "Schroedinger" cluster users}
+[domain/ldap1.ften.es.hpcn.uzh.ch]
+id_provider = ldap
+auth_provider = ldap
+chpass_provider = ldap
+access_provider = ldap
+enumerate = true
+cache_credentials = true
+
+ldap_access_filter = uidNumber>1000
+
+ldap_uri = ldap://ldap1.ften.es.hpcn.uzh.ch
+ldap_tls_reqcert = never
+
+ldap_schema = rfc2307
+ldap_search_base = dc=unizh,dc=ch
+ldap_user_search_base = ou=People,ou=Matterhorn,ou=zi,dc=unizh,dc=ch
+ldap_group_search_base = ou=Groups,ou=Matterhorn,ou=zi,dc=unizh,dc=ch
+
+ldap_default_bind_dn = cn=matterhorn,\ldots,ou=zi,dc=unizh,dc=ch
+ldap_default_authtok = ********
+\end{semiverbatim}
+\end{frame}
+
+
+\section{References}
+\begin{frame}[fragile]
+  \frametitle{Further reading}
+  \footnotesize
+  \begin{description}
+  \item[RFC 2307, \url{https://www.ietf.org/rfc/rfc2307.txt}] standard LDAP schema for UNIX user/group information
+  \item[RFC 2307bis, \url{https://tools.ietf.org/html/draft-howard-rfc2307bis-02}] draft update to RFC 2307
+  \item[\url{https://wiki.debian.org/LDAP/NSS}] Debian's guide to configuring \texttt{libnss-ldap} and \texttt{libpam-ldap} (works almost verbatim in any Linux distro)
+  \item[\url{http://arthurdejong.org/nss-pam-ldapd/}] home page of the \texttt{nss-pam-ldapd} project
+  \item[\url{https://fedorahosted.org/sssd/}] home page of the SSSD project
+  \item[\url{http://preview.tinyurl.com/rhel6-sssd-guide}] Red Hat's guide to installing and configuring SSSD
+  \end{description}
+\end{frame}
+
+
+\appendix
+
+\begin{frame}
+  \frametitle{LDAP schemas}
+  Entries in an LDAP database are sets of key/value pairs. (Keys need
+  not be unique; equivalently: a key can map to multiple values.)
+
+  \+
+  An \emph{LDAP schema} specifies the names of allowed keys, and the type of
+  corresponding values.
+
+  \+
+  \emph{Each entry} declares a set of schemas it conforms to; every
+  attribute in an LDAP entry must be defined in some schema.
+\end{frame}
+
+
+\begin{frame}
+  \frametitle{X.500/LDAP Directories}
+
+  Entries are organized into a \emph{tree structure} (DIT).
+  (So LDAP queries return subtrees, as opposed to flat sets of rows as
+  in a RDBMS query.)
+
+  \+
+  Each entry is uniquely identified by a ``Distinguished Name'' (DN).
+  The DN of an entry is formed by appending a one or more attribute
+  values to the parent entry's DN.
+
+  \+
+  LDAP accesses might result in \emph{referrals}, which redirect the
+  client to access another entry at a remote server.
+\end{frame}
+
+\end{document}
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: t
+%%% End:

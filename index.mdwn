@@ -1,0 +1,16 @@
+[[!meta title="USE meeting, November 4, 2014"]]
+[[!meta date="2014-11-04 14:00"]]
+[[!tag use sysadmin ldap linux]]
+
+
+USE meeting, November 4, 2014
+-----------------------------
+
+[Riccardo Murri (S3IT)][rm] presented an overview of LDAP
+authentication solutions available for Linux.
+
+You can find the slides [here][slides]; the last page contains a list
+of further reading material that was not presented during the meeting.
+
+[rm]: http://www.s3it.uzh.ch/about/team/#Riccardo.Murri
+[slides]: slides.pdf
