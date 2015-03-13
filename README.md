@@ -8,6 +8,7 @@ Originally presented at the [USE meeting][use] on November 4, 2014.
 [Riccardo Murri][rm] [(S3IT, University of Zurich)][s3it]
 
 
-[rm]: http://www.s3it.uzh.ch/about/team/#Riccardo.Murri
-[s3it]: http://www.s3it.uzh.ch/
-[slides]: slides.pdf
+[slides]: slides.pdf?raw=true
+[rm]:     http://www.s3it.uzh.ch/about/team/#Riccardo.Murri
+[s3it]:   http://www.s3it.uzh.ch/
+[use]:    https://s3itwiki.uzh.ch/display/USE/
